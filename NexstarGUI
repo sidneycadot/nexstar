@@ -1,0 +1,141 @@
+#! /usr/bin/env python3
+
+from QtBinding import QtGui, QtCore, QtSignal, QtSlot
+from Nexstar import NexstarHandController
+from enum import Enum
+
+import sys
+
+class NexstarHandControllerConnectionStatus(Enum):
+    DISCONNECTED  = 1
+    CONNECTING    = 2
+    CONNECTED     = 3
+    DISCONNECTING = 4
+
+class NexstarHandControllerThread(QtCore.QThread):
+    def __init__(self):
+        pass
+
+    def run(self):
+
+class NexstarHandControllerQt(QtCore.QObject):
+
+    statusChanged = QtSignal()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._connectionStatus = NexstarHandControllerConnectionStatus.DISCONNECTED
+        self._port             = "/dev/ttyS0"
+
+    @property
+    def port(self):
+        return self._port
+
+    @property
+    def connectionStatus(self):
+        return self._connectionStatus
+
+    QtSlot()
+    def openConnection(self):
+        if not (self._connectionStatus == NexstarHandControllerConnectionStatus.DISCONNECTED):
+            return
+
+        self._connectionStatus = NexstarHandControllerConnectionStatus.CONNECTING
+        self.statusChanged.emit()
+
+    def closeConnection(self):
+        if not (self._connectionStatus == NexstarHandControllerConnectionStatus.CONNECTED):
+            return
+
+        self._connectionStatus = NexstarHandControllerConnectionStatus.DISCONNECTING
+        self.statusChanged.emit()
+
+class NexstarWidget(QtGui.QWidget):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        handController = NexstarHandControllerQt()
+
+        layout = QtGui.QGridLayout()
+
+        portLabel = QtGui.QLabel("port")
+        layout.addWidget(portLabel, 0, 0)
+        portValue = QtGui.QLineEdit()
+        layout.addWidget(portValue, 0, 1)
+
+        connectionStatusLabel = QtGui.QLabel("Connection status")
+        layout.addWidget(connectionStatusLabel, 1, 0)
+        connectionStatusValue = QtGui.QLineEdit()
+        layout.addWidget(connectionStatusValue, 1, 1)
+        connectionButton = QtGui.QPushButton("Connect")
+        layout.addWidget(connectionButton, 1, 2)
+
+        self.setLayout(layout)
+
+        handController.statusChanged.connect(self._updateHandControllerStatus)
+        connectionButton.clicked.connect(self._connectionButtonClicked)
+
+        self._handController = handController
+        self._portValue = portValue
+        self._connectionStatusValue = connectionStatusValue
+        self._connectionButton = connectionButton
+
+        self._updateHandControllerStatus()
+
+    @QtSlot()
+    def _updateHandControllerStatus(self):
+
+        port = self._handController.port
+        self._portValue.setText(port)
+
+        connectionStatus = self._handController.connectionStatus
+        self._connectionStatusValue.setText(connectionStatus.name)
+
+        if connectionStatus in [NexstarHandControllerConnectionStatus.DISCONNECTED, NexstarHandControllerConnectionStatus.CONNECTED]:
+            enabled = True
+        else:
+            enabled = False
+
+        self._connectionButton.setEnabled(enabled)
+
+        if connectionStatus in [NexstarHandControllerConnectionStatus.DISCONNECTED, NexstarHandControllerConnectionStatus.CONNECTING]:
+            value = "Connect"
+        else:
+            value = "Disconnect"
+
+        self._connectionButton.setText(value)
+
+    @QtSlot()
+    def _connectionButtonClicked(self):
+
+        connectionStatus = self._handController.connectionStatus
+
+        print("==>", connectionStatus)
+
+        if connectionStatus == NexstarHandControllerConnectionStatus.DISCONNECTED:
+            self._handController.openConnection()
+        elif connectionStatus == NexstarHandControllerConnectionStatus.CONNECTED:
+            self._handController.closeConnection()
+
+class MainWindow(QtGui.QMainWindow):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        layout = QtGui.QVBoxLayout()
+        centralWidget = NexstarWidget()
+        self.setCentralWidget(centralWidget)
+
+class Application(QtGui.QApplication):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._mainWindow = MainWindow()
+        self._mainWindow.show()
+
+def main():
+    app = Application(sys.argv)
+    exitcode = QtGui.QApplication.exec_()
+    return exitcode
+
+if __name__ == "__main__":
+    exitcode = main()
+    sys.exit(exitcode)
