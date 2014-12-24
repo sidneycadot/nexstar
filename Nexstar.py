@@ -433,9 +433,9 @@ def main():
     print(pos)
 
     if True:
-        controller.slew(NexstarSubdevice.AZM_RA_MOTOR, NexstarSlewRateType.VARIABLE, -0.001)
-        controller.slew(NexstarSubdevice.ALT_DEC_MOTOR, NexstarSlewRateType.VARIABLE, +0.001)
-        time.sleep(60)
+        controller.slew(NexstarSubdevice.AZM_RA_MOTOR, NexstarSlewRateType.VARIABLE, -3.0)
+        #controller.slew(NexstarSubdevice.ALT_DEC_MOTOR, NexstarSlewRateType.VARIABLE, +0.001)
+        time.sleep(10)
         controller.slew(NexstarSubdevice.AZM_RA_MOTOR, NexstarSlewRateType.FIXED, 0)
 
     if False:
