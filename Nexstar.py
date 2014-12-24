@@ -1,5 +1,8 @@
 #! /usr/bin/env python3
 
+# This code follows the NexStar Communication Protocol as described in
+# http://www.celestron.com/c3/images/files/downloads/1154108406_nexstarcommprot.pdf
+
 import serial, warnings, datetime, pytz, time
 from enum import Enum
 
@@ -22,15 +25,47 @@ class NexstarModel(Enum):
     se68        = 12
     lcm         = 15
 
+class NexstarCommand(Enum):
+    # All Nexstar commands star with a single ASCII character.
+    GET_POSITION_RA_DEC           = 'E' # 1.2+
+    GET_POSITION_RA_DEC_PRECISE   = 'e' # 1.6+
+    GET_POSITION_AZM_ALT          = 'Z' # 1.2+
+    GET_POSITION_AZM_ALT_PRECISE  = 'z' # 2.2+
+    GOTO_POSITION_RA_DEC          = 'R' # 1.2+
+    GOTO_POSITION_RA_DEC_PRECISE  = 'r' # 1.6+
+    GOTO_POSITION_AZM_ALT         = 'B' # 1.2+
+    GOTO_POSITION_AZM_ALT_PRECISE = 'b' # 2.2+
+    SYNC                          = 'S' # 4.10+
+    SYNC_PRECISE                  = 's' # 4.10+
+    GET_TRACKING_MODE             = 't' # 2.3+
+    SET_TRACKING_MODE             = 'T' # 1.6+
+    GET_LOCATION                  = 'w' # 2.3+
+    SET_LOCATION                  = 'W' # 2.3+
+    GET_TIME                      = 'h' # 2.3+
+    SET_TIME                      = 'H' # 2.3+
+    GET_VERSION                   = 'V' # 1.2+
+    GET_MODEL                     = 'm' # 2.2+
+    ECHO                          = 'K' # 1.2+
+    GET_ALIGNMENT_COMPLETE        = 'J' # 1.2+
+    GET_GOTO_IN_PROGRESS          = 'L' # 1.2+
+    CANCEL_GOTO                   = 'M' # 1.2+
+    PASSTHROUGH                   = 'P' # 1.6+ this includes slewing commands, 'get device version' commands, GPS commands, and RTC commands
+
 class NexstarCoordinateMode(Enum):
     RA_DEC  = 1 # Right Ascension / Declination
     AZM_ALT = 2 # Azimuth/Altitude
+
+class NexstarTrackingMode(Enum):
+    OFF      = 0
+    ALT_AZ   = 1
+    EQ_NORTH = 2
+    EQ_SOUTH = 3
 
 class NexstarSlewRateType(Enum):
     FIXED    = 1
     VARIABLE = 2
 
-class NexstarSubdevice(Enum):
+class NexstarDeviceId(Enum):
     AZM_RA_MOTOR  = 16
     ALT_DEC_MOTOR = 17
     GPS_DEVICE    = 176
@@ -49,7 +84,7 @@ class NexstarHandController:
                     bytesize         = serial.EIGHTBITS,
                     parity           = serial.PARITY_NONE,
                     stopbits         = serial.STOPBITS_ONE,
-                    timeout          = 0.5,
+                    timeout          = 0.050,
                     xonxoff          = None,
                     rtscts           = False,
                     writeTimeout     = None,
@@ -69,35 +104,41 @@ class NexstarHandController:
     def _write_binary(self, request):
         return self._device.write(request)
 
-    def _write_string(self, request):
+    def _write_ascii(self, request):
+        assert isinstance(request, str)
         request = request.encode("ascii")
         return self._write_binary(request)
 
     def _read_binary(self, expected_response_length, check_and_remove_trailing_hash = True):
+
         if not (isinstance(expected_response_length, int) and expected_response_length > 0):
-            raise NexstarUsageError("_read_binary() failed: incorrect 'expected_response_length' parameter")
+            raise NexstarUsageError("_read_binary() failed: incorrect value for parameter 'expected_response_length': {}".format(repr(expected_response_length)))
+
         if not isinstance(check_and_remove_trailing_hash, bool):
-            raise NexstarUsageError("_read_binary() failed: incorrect 'check_and_remove_trailing_hash' parameter")
+            raise NexstarUsageError("_read_binary() failed: incorrect value for parameter 'check_and_remove_trailing_hash': {}".format(repr(check_and_remove_trailing_hash)))
 
         response = self._device.read(expected_response_length)
+
         if len(response) != expected_response_length:
             raise NexstarProtocolError("read_binary() failed: actual response length ({}) not equal to expected response length ({})".format(len(response), expected_response_length))
 
         if check_and_remove_trailing_hash:
-            if not (response[-1] == 35): # 'hash' character
+            if not (response[-1] == ord('#')): # 'hash' character
                 raise NexstarProtocolError("read_binary() failed: response does not end with hash character (ASCII 35)")
+
+            # remove the trailing hash character.
             response = response[:-1]
 
         return response
 
-    def _read_string(self, expected_response_length, check_and_remove_trailing_hash = True):
+    def _read_ascii(self, expected_response_length, check_and_remove_trailing_hash = True):
         response = self._read_binary(expected_response_length, check_and_remove_trailing_hash)
         response = response.decode("ascii")
         return response
 
     def getVersion(self):
         request = "V"
-        self._write_string(request)
+        self._write_ascii(request)
         response = self._read_binary(expected_response_length = 2 + 1, check_and_remove_trailing_hash = True)
         response = (response[0], response[1])
         return response
@@ -130,7 +171,7 @@ class NexstarHandController:
 
     def getAlignmentComplete(self):
         request = "J"
-        self._write_string(request)
+        self._write_ascii(request)
         response = self._read_binary(expected_response_length = 1 + 1, check_and_remove_trailing_hash = True)
         response = response[0]
         if not response in [0, 1]:
@@ -140,24 +181,24 @@ class NexstarHandController:
 
     def cancelGoto(self):
         request = "M"
-        self._write_string(request)
+        self._write_ascii(request)
         response = self._read_binary(expected_response_length = 0 + 1, check_and_remove_trailing_hash = True)
         return None
 
     def getGotoInProgress(self):
         request = "L"
-        self._write_string(request)
-        response = self._read_binary(expected_response_length = 1 + 1, check_and_remove_trailing_hash = True)
+        self._write_ascii(request)
+        response = self._read_ascii(expected_response_length = 1 + 1, check_and_remove_trailing_hash = True)
         response = response[0]
-        # Response is ASCII '0' or '1'
-        if not response in [48, 49]:
-            raise NexstarProtocolError("getGotoInProgress() failed: unexpected response ({})".format(response))
-        response = (response == 49)
+        # Response should be ASCII '0' or '1'
+        if not response in ['0', '1']:
+            raise NexstarProtocolError("getGotoInProgress() failed: unexpected response ({})".format(repr(response)))
+        response = (response == '1') # convert to boolean
         return response
 
     def getModel(self):
         request = "m"
-        self._write_string(request)
+        self._write_ascii(request)
         response = self._read_binary(expected_response_length = 1 + 1, check_and_remove_trailing_hash = True)
         response = response[0]
         return response
@@ -180,9 +221,9 @@ class NexstarHandController:
             expected_response_length = 4 + 1 + 4 + 1
             denominator = 0x10000
 
-        self._write_string(request)
+        self._write_ascii(request)
 
-        response = self._read_string(expected_response_length = expected_response_length, check_and_remove_trailing_hash = True)
+        response = self._read_ascii(expected_response_length = expected_response_length, check_and_remove_trailing_hash = True)
         response = response.split(",")
         if not (len(response) == 2):
             raise NexstarProtocolError("getPosition() failed: unexpected response ({})".format(response))
@@ -191,6 +232,8 @@ class NexstarHandController:
         return response
 
     def gotoPosition(self, firstCoordinate, secondCoordinate, coordinateMode = NexstarCoordinateMode.AZM_ALT, highPrecisionFlag = True):
+
+        # Initiate a "GoTo" command.
 
         if coordinateMode == NexstarCoordinateMode.RA_DEC:
             request = "r"
@@ -210,9 +253,11 @@ class NexstarHandController:
             secondCoordinate = round(secondCoordinate / 360.0 * 0x10000)
             request = "{}{:04x},{:04x}".format(request, firstCoordinate, secondCoordinate)
 
-        self._write_string(request)
+        self._write_ascii(request)
 
+        # Response is a single hash ('#') character. Drop it.
         response = self._read_binary(expected_response_length = 0 + 1, check_and_remove_trailing_hash = True)
+
         return None
 
     def sync(self, firstCoordinate, secondCoordinate, highPrecisionFlag = True):
@@ -232,15 +277,17 @@ class NexstarHandController:
             secondCoordinate = round(secondCoordinate / 360.0 * 0x10000)
             request = "{}{:04x},{:04x}".format(request, firstCoordinate, secondCoordinate)
 
-        self._write_string(request)
+        self._write_ascii(request)
 
+        # Response is a single hash ('#') character. Drop it.
         response = self._read_binary(expected_response_length = 0 + 1, check_and_remove_trailing_hash = True)
+
         return None
 
     def getTrackingMode(self):
 
         request = "t"
-        self._write_string(request)
+        self._write_ascii(request)
 
         response = self._read_binary(expected_response_length = 1 + 1, check_and_remove_trailing_hash = True)
 
@@ -257,11 +304,13 @@ class NexstarHandController:
 
         self._write_binary(request)
 
+        # Response is a single hash ('#') character. Drop it.
         response = self._read_binary(expected_response_length = 0 + 1, check_and_remove_trailing_hash = True)
+
         return None
 
     def slew(self, device, rateMode, rate):
-        assert device in [NexstarSubdevice.AZM_RA_MOTOR, NexstarSubdevice.ALT_DEC_MOTOR]
+        assert device in [NexstarDeviceId.AZM_RA_MOTOR, NexstarDeviceId.ALT_DEC_MOTOR]
         if rateMode == NexstarSlewRateType.FIXED:
             if rate >= 0:
                 sign = 36
@@ -283,13 +332,15 @@ class NexstarHandController:
 
         self._write_binary(request)
 
+        # Response is a single hash ('#') character. Drop it.
         response = self._read_binary(expected_response_length = 0 + 1, check_and_remove_trailing_hash = True)
+
         return None
 
     def getLocation(self):
 
         request = "w"
-        self._write_string(request)
+        self._write_ascii(request)
 
         response = self._read_binary(expected_response_length = 8 + 1, check_and_remove_trailing_hash = True)
 
@@ -311,7 +362,6 @@ class NexstarHandController:
         if longitude_sign != 0:
             longitude_seconds = -longitude_seconds
 
-        print("==>", latitude_seconds, longitude_seconds)
         latitude = latitude_seconds / 3600.0
         longitude = longitude_seconds / 3600.0
 
@@ -337,9 +387,7 @@ class NexstarHandController:
             longitude_sign = 1
             longitude_seconds = -longitude_seconds
 
-        print("======>", latitude_seconds, longitude_seconds)
-
-        # Reduce to DMS
+        # Reduce to Degrees/Minutes/Seconds
 
         latitude_degrees = latitude_seconds // 3600 ; latitude_seconds %= 3600
         latitude_minutes = latitude_seconds // 60   ; latitude_seconds %= 60
@@ -349,19 +397,25 @@ class NexstarHandController:
 
         # Synthesize "W" request
 
-        request = [ord("W"), latitude_degrees, latitude_minutes, latitude_seconds, latitude_sign,
-                             longitude_degrees, longitude_minutes, longitude_seconds, longitude_sign ]
+        request = [
+                ord("W"),
+                latitude_degrees, latitude_minutes, latitude_seconds, latitude_sign,
+                longitude_degrees, longitude_minutes, longitude_seconds, longitude_sign
+            ]
+
         request = bytes(request)
 
         self._write_binary(request)
 
+        # Response is a single hash ('#') character. Drop it.
         response = self._read_binary(expected_response_length = 0 + 1, check_and_remove_trailing_hash = True)
+
         return None
 
     def getTime(self):
 
         request = "h"
-        self._write_string(request)
+        self._write_ascii(request)
 
         response = self._read_binary(expected_response_length = 8 + 1, check_and_remove_trailing_hash = True)
 
@@ -407,10 +461,14 @@ class NexstarHandController:
         request = bytes(request)
         self._write_binary(request)
 
+        # Response is a single hash ('#') character. Drop it.
         response = self._read_binary(expected_response_length = 0 + 1, check_and_remove_trailing_hash = True)
+
         return None
 
 def main():
+
+    # Perform tests
 
     port = "/dev/ttyS3"
 
@@ -433,10 +491,10 @@ def main():
     print(pos)
 
     if True:
-        controller.slew(NexstarSubdevice.AZM_RA_MOTOR, NexstarSlewRateType.VARIABLE, -0.001)
-        controller.slew(NexstarSubdevice.ALT_DEC_MOTOR, NexstarSlewRateType.VARIABLE, +0.001)
+        controller.slew(NexstarDeviceId.AZM_RA_MOTOR, NexstarSlewRateType.VARIABLE, -0.1)
+        controller.slew(NexstarDeviceId.ALT_DEC_MOTOR, NexstarSlewRateType.VARIABLE, +0.1)
         time.sleep(60)
-        controller.slew(NexstarSubdevice.AZM_RA_MOTOR, NexstarSlewRateType.FIXED, 0)
+        controller.slew(NexstarDeviceId.AZM_RA_MOTOR, NexstarSlewRateType.FIXED, 0)
 
     if False:
 
