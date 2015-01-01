@@ -12,7 +12,7 @@ class NexstarUsageError(Exception):
 class NexstarProtocolError(Exception):
     pass
 
-class NexstarNoSuchDeviceError(Exception):
+class NexstarPassthroughError(Exception):
     pass
 
 class NexstarModel(Enum):
@@ -54,6 +54,13 @@ class NexstarCommand(Enum):
     CANCEL_GOTO                   = 'M' # 1.2+
     PASSTHROUGH                   = 'P' # 1.6+ this includes slewing commands, 'get device version' commands, GPS commands, and RTC commands
 
+class NexstarPassthroughCommand(Enum):
+    MOTOR_SLEW_POSITIVE_VARIABLE_RATE =   6
+    MOTOR_SLEW_NEGATIVE_VARIABLE_RATE =   7
+    MOTOR_SLEW_POSITIVE_FIXED_RATE    =  36
+    MOTOR_SLEW_NEGATIVE_FIXED_RATE    =  37
+    GET_DEVICE_VERSION                = 254
+
 class NexstarCoordinateMode(Enum):
     RA_DEC  = 1 # Right Ascension / Declination
     AZM_ALT = 2 # Azimuth/Altitude
@@ -63,10 +70,6 @@ class NexstarTrackingMode(Enum):
     ALT_AZ   = 1
     EQ_NORTH = 2
     EQ_SOUTH = 3
-
-class NexstarSlewRateType(Enum):
-    FIXED    = 1
-    VARIABLE = 2
 
 class NexstarDeviceId(Enum):
     AZM_RA_MOTOR  = 16
@@ -110,9 +113,9 @@ class NexstarHandController:
         assert isinstance(request, str)
 
     @staticmethod
-    def _to_message(arg):
+    def _to_bytes(arg):
 
-        if isinstance(arg, NexstarCommand) or isinstance(arg, NexstarTrackingMode) or isinstance(arg, NexstarDeviceId):
+        if isinstance(arg, NexstarCommand) or isinstance(arg, NexstarTrackingMode) or isinstance(arg, NexstarDeviceId) or isinstance (arg, NexstarPassthroughCommand):
            arg = arg.value
 
         if isinstance(arg, int):
@@ -122,12 +125,12 @@ class NexstarHandController:
             arg = bytes(arg, "ascii")
 
         if not isinstance(arg, bytes):
-            arg = b''.join(NexstarHandController._to_message(e) for e in arg)
+            arg = b''.join(NexstarHandController._to_bytes(e) for e in arg)
 
         return arg
 
     def _write(self, *args):
-        msg = NexstarHandController._to_message(args)
+        msg = NexstarHandController._to_bytes(args)
         # print("message to be written:", msg)
         return self._write_binary(msg)
 
@@ -147,7 +150,6 @@ class NexstarHandController:
         if check_and_remove_trailing_hash:
             if not (response[-1] == ord('#')): # 'hash' character
                 raise NexstarProtocolError("read_binary() failed: response does not end with hash character (ASCII 35)")
-
             # remove the trailing hash character.
             response = response[:-1]
 
@@ -432,61 +434,76 @@ class NexstarHandController:
         return None
 
     # The commands below are low-level 'pass-through' commands that are handled by the specified
-    # sub-devices connected to the hand controller via the 6-pin  RJ-12 port.
+    # sub-devices connected to the hand controller via the 6-pin RJ-12 port.
 
-    def slew(self, device, rateMode, rate):
-        assert device in [NexstarDeviceId.AZM_RA_MOTOR, NexstarDeviceId.ALT_DEC_MOTOR]
-        if rateMode == NexstarSlewRateType.FIXED:
-            if rate >= 0:
-                sign = 36
-            else:
-                sign = 37
-                rate = -rate
-            request = [NexstarCommand.PASSTHROUGH, 2, device, sign, rate, 0, 0, 0]
-        elif rateMode == NexstarSlewRateType.VARIABLE:
-            # rate is assumed to be in in degrees / second
-            rate = round(rate * 3600.0 * 4)
-            if rate >= 0:
-                sign = 6
-            else:
-                sign = 7
-                rate = -rate
-            request = [NexstarCommand.PASSTHROUGH, 3, device, sign, rate // 256, rate % 256, 0, 0]
-
-        self._write(request)
-
-        # Response is a single hash ('#') character. Drop it.
-        response = self._read_binary(expected_response_length = 0 + 1, check_and_remove_trailing_hash = True)
-
-        return None
-
-    def getDeviceVersion(self, deviceId):
+    def passthrough(self, deviceId, command, expected_response_bytes):
 
         if not isinstance(deviceId, NexstarDeviceId):
             raise NexstarUsageError("getDeviceVersion() failed: incorrect value for parameter 'deviceId': {}".format(repr(deviceId)))
 
-        request = [ord("P"), 1, deviceId.value, 254, 0, 0, 0, 2]
-        request = bytes(request)
-        self._write_binary(request)
+        if not (isinstance(expected_response_bytes, int) and expected_response_bytes >= 0):
+            raise NexstarUsageError("passthrough() failed: incorrect value for parameter 'expected_response_bytes': {}".format(repr(expected_response_bytes)))
 
-        response = self._device.read(2 + 1)
+        command_bytes = NexstarHandController._to_bytes(command)
 
-        if (response[-1] != ord('#')):
-            # We got a response that didn't end with a hash character.
-            # This happens if the requested device does not exist.
-            # In that case, an extra # is output next.
+        if not (1 <= len(command_bytes) <= 4):
+            raise NexstarUsageError("expected between 1 and 4 command bytes for passthrough command (received {})".format(len(command)))
 
+        padding = bytes(4 - len(command_bytes))
+
+        request = [NexstarCommand.PASSTHROUGH, len(command_bytes), deviceId, command_bytes, padding, expected_response_bytes]
+
+        self._write(request)
+
+        # Receive response.
+        try:
+            response = self._read_binary(expected_response_length = expected_response_bytes + 1, check_and_remove_trailing_hash = True)
+        except NexstarProtocolError as exception:
+            # read away extra hash
             extra_hash = self._device.read(1)
-
             if extra_hash != b"#":
-                raise NexstarProtocolError("extra hash not found")
+                raise NexstarProtocolError("extra hash not found") from exception
 
-            raise NexstarNoSuchDeviceError("device {} not found".format(deviceId.name))
+            raise NexstarPassthroughError("No valid response from device {}".format(deviceId.name))
 
-        # We have a response that ends with a has. Assume it is valid.
-        response = response[:-1] # drop hash
+        return response
 
-        (versionMajor, versionMinor) = response
+    def slew_fixed(self, deviceId, rate):
+        if deviceId not in [NexstarDeviceId.AZM_RA_MOTOR, NexstarDeviceId.ALT_DEC_MOTOR]:
+            raise NexstarUsageError("slew command only supported for motors.")
+        if not (isinstance(rate, int) and -9 <= rate <= +9):
+            raise NexstarUsageError("slew_fixed() failed: incorrect value for parameter 'rate': {}".format(repr(rate)))
+
+        if rate >= 0:
+            command = NexstarPassthroughCommand.MOTOR_SLEW_POSITIVE_FIXED_RATE
+        else:
+            command = NexstarPassthroughCommand.MOTOR_SLEW_NEGATIVE_FIXED_RATE
+            rate = -rate
+
+        self.passthrough(deviceId, [command, rate], expected_response_bytes = 0)
+
+    def slew_variable(self, deviceId, rate):
+        if deviceId not in [NexstarDeviceId.AZM_RA_MOTOR, NexstarDeviceId.ALT_DEC_MOTOR]:
+            raise NexstarUsageError("slew command only supported for motors.")
+
+        # rate is assumed to be in in degrees / second
+        rate = round(rate * 3600.0 * 4)
+
+        if rate >= 0:
+            command = NexstarPassthroughCommand.MOTOR_SLEW_POSITIVE_VARIABLE_RATE
+        else:
+            command = NexstarPassthroughCommand.MOTOR_SLEWNEGATIVE_VARIABLE_RATE
+            rate = -rate
+
+        if not (0 <= rate <= 65535):
+            raise NexstarUsageError("variable rate out of range.")
+
+        self.passthrough(deviceId, [command, rate // 256, rate % 256], expected_response_bytes = 0)
+
+    def getDeviceVersion(self, deviceId):
+
+        (versionMajor, versionMinor) = self.passthrough(deviceId, command = NexstarPassthroughCommand.GET_DEVICE_VERSION, expected_response_bytes = 2)
+
         return (versionMajor, versionMinor)
 
     def getDeviceIntVersion(self, deviceId):
@@ -501,18 +518,19 @@ class NexstarHandController:
         response = self._device.read(2 + 1)
 
         if (response[-1] != ord('#')):
+
             # We got a response that didn't end with a hash character.
             # This happens if the requested device does not exist.
-            # In that case, an extra # is output next.
+            # In that case, an extra # is output by the hand controller.
+            # We read and swallow it here.
 
             extra_hash = self._device.read(1)
-
             if extra_hash != b"#":
                 raise NexstarProtocolError("extra hash not found")
 
             raise NexstarNoSuchDeviceError("device {} not found".format(deviceId))
 
-        # We have a response that ends with a has. Assume it is valid.
+        # We have a response that ends with a hash. Assume it is valid.
         response = response[:-1] # drop hash
 
         (versionMajor, versionMinor) = response
@@ -555,7 +573,7 @@ def status_report(controller):
             try:
                 (versionMajor, versionMinor) = controller.getDeviceVersion(deviceId)
                 status = "version = {}.{}".format(versionMajor, versionMinor)
-            except NexstarNoSuchDeviceError as exception:
+            except NexstarPassthroughError as exception:
                 status = "error: {}".format(exception)
 
             print("device {} {} : {}".format(deviceId.name, "." * (27 - len(str(deviceId.name))), status))
@@ -587,12 +605,12 @@ def main():
 
     status_report(controller)
 
-    if False:
+    if True:
 
-        #controller.slew(NexstarDeviceId.AZM_RA_MOTOR, NexstarSlewRateType.FIXED, 3)
-        #controller.slew(NexstarDeviceId.ALT_DEC_MOTOR, NexstarSlewRateType.VARIABLE, +0.001)
-        #time.sleep(10)
-        #controller.slew(NexstarDeviceId.AZM_RA_MOTOR, NexstarSlewRateType.FIXED, 0)
+        controller.slew_fixed(NexstarDeviceId.AZM_RA_MOTOR, 9)
+        #controller.slew(NexstarDeviceId.ALT_DEC_MOTOR, +0.001)
+        time.sleep(10)
+        controller.slew_fixed(NexstarDeviceId.AZM_RA_MOTOR, 0)
         pass
 
     if False:
@@ -617,7 +635,7 @@ def main():
                 try:
                     (versionMajor, versionMinor) = controller.getDeviceVersion(deviceId)
                     status = "version = {}.{}".format(versionMajor, versionMinor)
-                except NexstarNoSuchDeviceError as exception:
+                except NexstarPassthroughError as exception:
                     status = "error: {}".format(exception)
 
                 print("device {} {} : {}".format(deviceId.name, "." * (27 - len(str(deviceId.name))), status))
@@ -644,7 +662,8 @@ def main():
 if __name__ == "__main__":
     main()
 
-
+# Below are some low-level HC <-> MC commands:
+#
 # Standard boot sequence:
 
 # 3b 03 0d 11 05 da    3b 05 11 0d 05 0f 87 42

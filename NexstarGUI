@@ -16,8 +16,6 @@ class NexstarHandControllerThread(QtCore.QThread):
     def __init__(self):
         pass
 
-    def run(self):
-
 class NexstarHandControllerQt(QtCore.QObject):
 
     statusChanged = QtSignal()
