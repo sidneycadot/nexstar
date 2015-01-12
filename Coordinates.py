@@ -4,11 +4,9 @@ import math
 
 def to_dms(x):
 
-    if x >= 0:
-        sign = 1
-    else:
-        sign = -1
-        x = -x
+    sign = (x > 0) - (x < 0) # Python lacks a sign() function.
+
+    x *= sign # make sure that x is non-negative
 
     d = math.floor(x)
     x = (x - d) * 60.0
@@ -16,21 +14,21 @@ def to_dms(x):
     x = (x - m) * 60.0
     s = x
 
-    if sign < 0:
-        d = -d
+    d *= sign # correct sign of the result
 
     return (d, m, s)
 
-def present(label, latitude, longitude):
+def show_coordinates(label, lat, lon):
 
-    (latitude_d , latitude_m , latitude_s ) = to_dms(latitude)
-    (longitude_d, longitude_m, longitude_s) = to_dms(longitude)
+    (lat_d, lat_m, lat_s) = to_dms(lat)
+    (lon_d, lon_m, lon_s) = to_dms(lon)
 
     print("[{}] latitude: {:.9f} (dms: {:+4d}°{:02d}′{:06.3f}″) longitude: {:.9f} (dms: {:+4d}°{:02d}′{:06.3f}″)".format(
             label,
-        latitude, latitude_d , latitude_m , latitude_s,
-        longitude, longitude_d, longitude_m, longitude_s
-    ))
+            lat, lat_d, lat_m, lat_s,
+            lon, lon_d, lon_m, lon_s
+        ))
 
-present("WS13", 52.010285, 4.350061)
-present("BW47", 52.011308, 4.361591)
+if __name__ == "__main__":
+    show_coordinates("WS13", 52.010285, 4.350061)
+    show_coordinates("BW47", 52.011310, 4.361599)
