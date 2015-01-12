@@ -7,7 +7,7 @@
 
 import sys, logging
 
-usePySide = ("--pyside" in sys.argv)
+usePySide = ("--pyside" in sys.argv[1:])
 
 if usePySide:
     from PySide import QtCore, QtGui

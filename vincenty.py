@@ -1,4 +1,3 @@
-
 from math import radians as degrees_to_radians, degrees as radians_to_degrees, sin, cos, tan, atan, atan2, sqrt, acos
 
 def lookup_ellipsoid_parameters(ellipsoid):
