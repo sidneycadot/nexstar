@@ -6,9 +6,12 @@ from vincenty import vincenty_direct, vincenty_inverse
 #const double THRESHOLD_ANGLE = 1e-6;
 #const double THRESHOLD_DIST  = 1e-3;
 
-def coord(degs, mins, secs):
-    sign = (degs > 0) - (degs < 0)
-    degs *= sign
+def coord(sign, degs, mins, secs):
+    assert sign in [+1, -1]
+    assert 0 <= degs
+    assert 0 <= mins <= 59
+    assert 0 <= secs <  60
+
     x = degs + mins / 60.0 + secs / 3600.0
     x *= sign
     return x
@@ -19,183 +22,75 @@ def to_dms(x):
 
     x *= sign # make sure that x is non-negative
 
+    assert(x >= 0)
+
     d = math.floor(x)
     x = (x - d) * 60.0
     m = math.floor(x)
     x = (x - m) * 60.0
     s = x
 
-    d *= sign # correct sign of the result
-
-    return (d, m, s)
+    return (sign, d, m, s)
 
 def dms_string(x):
-    (d, m, s) = to_dms(x)
-    return "{:+4d}°{:02d}′{:08.5f}″".format(d, m, s)
+    (sign, d, m, s) = to_dms(x)
+    r = "{}{:d}°{:02d}′{:08.5f}″".format("+" if sign >= 0 else "-", d, m, s)
+    return "{:>19}".format(r)
+
+def distance_string(s):
+    r = "{:.3f} meters".format(s)
+    return "{:>19}".format(r)
 
 def test_paper():
 
-    # Case (a) direct
+    # These testcases come from Table II of the 1975 article by Vincenty.
 
-    phi1      = coord(55.0, 45.0, 0.00000)
-    alpha1    = coord(96.0, 36.0, 8.79960)
-    s         = 14110526.170
-    ellipsoid = "bessel"
+    testcases = [
+        ("(a)", (+1, 55, 45,  0.00000), (-1,  33, 26,  0.00000),
+                (+1, 96, 36,  8.79960), (+1, 108, 13,  0.00000),
+                       14110526.170,    (+1, 137, 52, 22.01454), "bessel"),
+        ("(b)", (+1, 37, 19, 54.95367), (+1,  26,  7, 42.83946),
+                (+1, 95, 27, 59.63089), (+1,  41, 28, 35.50729),
+                        4085966.703,    (+1, 118,  5, 58.96161), "international"),
+        ("(c)", (+1, 35, 16, 11.24862), (+1,  67, 22, 14.77638),
+                (+1, 15, 44, 23.74850), (+1, 137, 47, 28.31435),
+                        8084823.839,    (+1, 144, 55, 39.92147), "international"),
+        ("(d)", (+1,  1,  0,  0.00000), (-1,   0, 59, 53.83076),
+                (+1, 89,  0,  0.00000), (+1, 179, 17, 48.02997),
+                       19960000.000,    (+1,  91,  0,  6.11733), "international"),
+        ("(e)", (+1,  1,  0,  0.00000), (+1,   1,  1, 15.18952),
+                (+1,  4, 59, 59.99995), (+1, 179, 46, 17.84244),
+                       19780006.558,    (+1, 174, 59, 59.88481), "international")
+    ]
 
-    (phi2, L, alpha2) = vincenty_direct(phi1, 0.0, alpha1, s, ellipsoid)
+    for (label, phi1, phi2, alpha1, L, s, alpha2, ellipsoid) in testcases:
 
-    print("Case (a) direct:")
-    print()
-    print("    phi2 ......... : {}".format(dms_string(phi2)))
-    print("    L ............ : {}".format(dms_string(L)))
-    print("    alpha2 ....... : {}".format(dms_string(alpha2)))
-    print()
+        phi1   = coord(*phi1)
+        phi2   = coord(*phi2)
+        alpha1 = coord(*alpha1)
+        L      = coord(*L)
+        alpha2 = coord(*alpha2)
 
-    # Case (b) direct
+        (direct_phi2, direct_L, direct_alpha2) = vincenty_direct(phi1, 0.0, alpha1, s, ellipsoid)
+        (inverse_s, inverse_alpha1, inverse_alpha2) = vincenty_inverse(phi1, 0.0, phi2, L, ellipsoid)
 
-    phi1      = coord(37.0, 19.0, 54.95367)
-    alpha1    = coord(95.0, 27.0, 59.63089)
-    s         = 4085966.703
-    ellipsoid = "international"
+        print("Case {}:".format(label))
+        print()
+        print("    table ellipsoid ...... : {}".format(ellipsoid))
+        print("    table phi1 ........... : {}".format(dms_string(phi1)))
+        print("    table phi2 ........... : {}".format(dms_string(phi2)))
+        print("    table alpha1 ......... : {}".format(dms_string(alpha1)))
+        print("    table L .............. : {}".format(dms_string(L)))
+        print("    table s .............. : {}".format(distance_string(s)))
+        print("    table alpha2 ......... : {}".format(dms_string(alpha2)))
+        print("    direct phi2 .......... : {} (difference: {})".format(dms_string(direct_phi2), dms_string(direct_phi2 - phi2)))
+        print("    direct L ............. : {} (difference: {})".format(dms_string(direct_L), dms_string(direct_L - L)))
+        print("    direct alpha2 ........ : {} (difference: {})".format(dms_string(direct_alpha2), dms_string(direct_alpha2 - alpha2)))
+        print("    inverse_s ............ : {} (difference: {})".format(distance_string(inverse_s), distance_string(inverse_s - s)))
+        print("    inverse alpha1 ....... : {} (difference: {})".format(dms_string(inverse_alpha1), dms_string(inverse_alpha1 - alpha1)))
+        print("    inverse alpha2 ....... : {} (difference: {})".format(dms_string(inverse_alpha2), dms_string(inverse_alpha2 - alpha2)))
+        print()
 
-    (phi2, L, alpha2) = vincenty_direct(phi1, 0.0, alpha1, s, ellipsoid)
-
-    print("Case (b) direct:")
-    print()
-    print("    phi2 ......... : {}".format(dms_string(phi2)))
-    print("    L ............ : {}".format(dms_string(L)))
-    print("    alpha2 ....... : {}".format(dms_string(alpha2)))
-    print()
-
-    # Case (c) direct
-
-    phi1      = coord(35.0, 16.0, 11.24862)
-    alpha1    = coord(15.0, 44.0, 23.74850)
-    s         = 8084823.839
-    ellipsoid = "international"
-
-    (phi2, L, alpha2) = vincenty_direct(phi1, 0.0, alpha1, s, ellipsoid)
-
-    print("Case (c) direct:")
-    print()
-    print("    phi2 ......... : {}".format(dms_string(phi2)))
-    print("    L ............ : {}".format(dms_string(L)))
-    print("    alpha2 ....... : {}".format(dms_string(alpha2)))
-    print()
-
-    # Case (d) direct
-
-    phi1      = coord( 1.0, 0.0, 0.00000)
-    alpha1    = coord(89.0, 0.0, 0.00000)
-    s         = 19960000.000
-    ellipsoid = "international"
-
-    (phi2, L, alpha2) = vincenty_direct(phi1, 0.0, alpha1, s, ellipsoid)
-
-    print("Case (d) direct:")
-    print()
-    print("    phi2 ......... : {}".format(dms_string(phi2)))
-    print("    L ............ : {}".format(dms_string(L)))
-    print("    alpha2 ....... : {}".format(dms_string(alpha2)))
-    print()
-
-    # Case (e) direct
-
-    phi1      = coord( 1.0,  0.0,  0.00000)
-    alpha1    = coord( 4.0, 59.0, 59.99995)
-    s         = 19780006.558
-    ellipsoid = "international"
-
-    (phi2, L, alpha2) = vincenty_direct(phi1, 0.0, alpha1, s, ellipsoid)
-
-    print("Case (e) direct:")
-    print()
-    print("    phi2 ......... : {}".format(dms_string(phi2)))
-    print("    L ............ : {}".format(dms_string(L)))
-    print("    alpha2 ....... : {}".format(dms_string(alpha2)))
-    print()
-
-    # Case (a) inverse
-
-    phi1      =  coord( 55.0, 45.0, 0.00000)
-    phi2      = -coord( 33.0, 26.0, 0.00000)
-    L         =  coord(108.0, 13.0, 0.00000)
-    ellipsoid = "bessel"
-
-    (s, alpha1, alpha2) = vincenty_inverse(phi1, 0.0, phi2, L, ellipsoid)
-
-    print("Case (a) inverse:")
-    print()
-    print("    alpha1 ....... : {}".format(dms_string(alpha1)))
-    print("    alpha2 ....... : {}".format(dms_string(alpha2)))
-    print("    s ............ : {:10.3f} meters".format(s))
-    print()
-
-    # Case (b) inverse
-
-    phi1      =  coord( 37.0, 19.0, 54.95367)
-    phi2      =  coord( 26.0,  7.0, 42.83946)
-    L         =  coord( 41.0, 28.0, 35.50729)
-    ellipsoid = "international"
-
-    (s, alpha1, alpha2) = vincenty_inverse(phi1, 0.0, phi2, L, ellipsoid)
-
-    print("Case (b) inverse:")
-    print()
-    print("    alpha1 ....... : {}".format(dms_string(alpha1)))
-    print("    alpha2 ....... : {}".format(dms_string(alpha2)))
-    print("    s ............ : {:10.3f} meters".format(s))
-    print()
-
-    # Case (c) inverse
-
-    phi1   =  coord( 35.0, 16.0, 11.24862)
-    phi2   =  coord( 67.0, 22.0, 14.77638)
-    L      =  coord(137.0, 47.0, 28.31435)
-    ellipsoid = "international"
-
-    (s, alpha1, alpha2) = vincenty_inverse(phi1, 0.0, phi2, L, ellipsoid)
-
-    print("Case (c) inverse:")
-    print()
-    print("    alpha1 ....... : {}".format(dms_string(alpha1)))
-    print("    alpha2 ....... : {}".format(dms_string(alpha2)))
-    print("    s ............ : {:10.3f} meters".format(s))
-    print()
-
-    return # TODO: fix cases below
-
-    # Case (d) inverse
-
-    phi1      =  coord(  1.0,  0.0,  0.00000)
-    phi2      = -coord(  0.0, 59.0, 53.83076)
-    L         =  coord(179.0, 17.0, 48.02997)
-    ellipsoid = "international"
-
-    (s, alpha1, alpha2) = vincenty_inverse(phi1, 0.0, phi2, L, ellipsoid)
-
-    print("Case (d) inverse:")
-    print()
-    print("    alpha1 ....... : {}".format(dms_string(alpha1)))
-    print("    alpha2 ....... : {}".format(dms_string(alpha2)))
-    print("    s ............ : {:10.3f} meters".format(s))
-    print()
-
-    # Case (e) inverse
-
-    phi1   =  coord(  1.0,  0.0,  0.00000)
-    phi2   =  coord(  1.0,  1.0, 15.18952)
-    L      =  coord(179.0, 46.0, 17.84244)
-    ellipsoid = "international"
-
-    (s, alpha1, alpha2) = vincenty_inverse(phi1, 0.0, phi2, L, ellipsoid)
-
-    print("Case (e) inverse:")
-    print()
-    print("    alpha1 ....... : {}".format(dms_string(alpha1)))
-    print("    alpha2 ....... : {}".format(dms_string(alpha2)))
-    print("    s ............ : {:10.3f} meters".format(s))
-    print()
 
 #void test1p(double lat1, double lon1)
 #{
@@ -393,11 +288,12 @@ def test_paper():
 
 #}
 
-#void test_grid1p(void)
-#{
-    #// start at -180+1/256; stop at 180-1/256;
-    #// 119 steps of 781/256.0
+def test_grid1p():
+    pass
+    # start at -180+1/256; stop at 180-1/256;
+    # 119 steps of 781/256.0
 
+    #for lat1 in range(-88.0
     #for(double lat1 = -88.0; lat1 <=  88.0; lat1 += 8.0)
     #{
         #for(double lon1 = 0.0; lon1 < 360.0; lon1 += 8.0)
@@ -405,7 +301,6 @@ def test_paper():
             #test1p(lat1, lon1);
         #}
     #}
-#}
 
 #void test_grid2p(void)
 #{
