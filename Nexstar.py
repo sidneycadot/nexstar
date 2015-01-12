@@ -110,8 +110,6 @@ class NexstarHandController:
     def _write_binary(self, request):
         return self._device.write(request)
 
-        assert isinstance(request, str)
-
     @staticmethod
     def _to_bytes(arg):
 
@@ -148,7 +146,7 @@ class NexstarHandController:
             raise NexstarProtocolError("read_binary() failed: actual response length ({}) not equal to expected response length ({})".format(len(response), expected_response_length))
 
         if check_and_remove_trailing_hash:
-            if not (response[-1] == ord('#')): # 'hash' character
+            if not response.endswith(b'#'):
                 raise NexstarProtocolError("read_binary() failed: response does not end with hash character (ASCII 35)")
             # remove the trailing hash character.
             response = response[:-1]
@@ -160,18 +158,20 @@ class NexstarHandController:
         response = response.decode("ascii")
         return response
 
+    # Public API starts here
+
     def getPosition(self, coordinateMode = NexstarCoordinateMode.AZM_ALT, highPrecisionFlag = True):
 
         if highPrecisionFlag:
-            request = NexstarCommand.GET_POSITION_AZM_ALT_PRECISE if (coordinateMode == NexstarCoordinateMode.AZM_ALT) else NexstarCommand.GET_POSITION_RA_DEC_PRECISE
+            command = NexstarCommand.GET_POSITION_AZM_ALT_PRECISE if (coordinateMode == NexstarCoordinateMode.AZM_ALT) else NexstarCommand.GET_POSITION_RA_DEC_PRECISE
             expected_response_length = 8 + 1 + 8 + 1
             denominator = 0x100000000
         else:
-            request = NexstarCommand.GET_POSITION_AZM_ALT if (coordinateMode == NexstarCoordinateMode.AZM_ALT) else NexstarCommand.GET_POSITION_RA_DEC
+            command = NexstarCommand.GET_POSITION_AZM_ALT if (coordinateMode == NexstarCoordinateMode.AZM_ALT) else NexstarCommand.GET_POSITION_RA_DEC
             expected_response_length = 4 + 1 + 4 + 1
             denominator = 0x10000
 
-        self._write(request)
+        self._write(command)
 
         response = self._read_ascii(expected_response_length = expected_response_length, check_and_remove_trailing_hash = True)
         response = response.split(",")
@@ -186,17 +186,17 @@ class NexstarHandController:
         # Initiate a "GoTo" command.
 
         if highPrecisionFlag:
-            request = NexstarCommand.GOTO_POSITION_AZM_ALT_PRECISE if (coordinateMode == NexstarCoordinateMode.AZM_ALT) else NexstarCommand.GOTO_POSITION_RA_DEC_PRECISE
+            command = NexstarCommand.GOTO_POSITION_AZM_ALT_PRECISE if (coordinateMode == NexstarCoordinateMode.AZM_ALT) else NexstarCommand.GOTO_POSITION_RA_DEC_PRECISE
             firstCoordinate  = round(firstCoordinate  / 360.0 * 0x100000000)
             secondCoordinate = round(secondCoordinate / 360.0 * 0x100000000)
             coordinates = "{:08x},{:08x}".format(firstCoordinate, secondCoordinate)
         else:
-            request = NexstarCommand.GOTO_POSITION_AZM_ALT if (coordinateMode == NexstarCoordinateMode.AZM_ALT) else NexstarCommand.GOTO_POSITION_RA_DEC
+            command = NexstarCommand.GOTO_POSITION_AZM_ALT if (coordinateMode == NexstarCoordinateMode.AZM_ALT) else NexstarCommand.GOTO_POSITION_RA_DEC
             firstCoordinate  = round(firstCoordinate  / 360.0 * 0x10000)
             secondCoordinate = round(secondCoordinate / 360.0 * 0x10000)
             coordinates = "{:04x},{:04x}".format(firstCoordinate, secondCoordinate)
 
-        self._write(request, coordinates)
+        self._write(command, coordinates)
 
         # Response is a single hash ('#') character. Drop it.
         response = self._read_binary(expected_response_length = 0 + 1, check_and_remove_trailing_hash = True)
@@ -208,17 +208,17 @@ class NexstarHandController:
         # sync always works in RA/DEC coordinates
 
         if highPrecisionFlag:
-            request = NexstarCommand.SYNC_PRECISE
+            command = NexstarCommand.SYNC_PRECISE
             firstCoordinate  = round(firstCoordinate  / 360.0 * 0x100000000)
             secondCoordinate = round(secondCoordinate / 360.0 * 0x100000000)
             coordinates = "{}{:08x},{:08x}".format(firstCoordinate, secondCoordinate)
         else:
-            request = NexstarCommand.SYNC
+            command = NexstarCommand.SYNC
             firstCoordinate  = round(firstCoordinate  / 360.0 * 0x10000)
             secondCoordinate = round(secondCoordinate / 360.0 * 0x10000)
             coordinates = "{}{:04x},{:04x}".format(firstCoordinate, secondCoordinate)
 
-        self._write(request, coordinates)
+        self._write(command, coordinates)
 
         # Response is a single hash ('#') character. Drop it.
         response = self._read_binary(expected_response_length = 0 + 1, check_and_remove_trailing_hash = True)
@@ -227,8 +227,8 @@ class NexstarHandController:
 
     def getTrackingMode(self):
 
-        request = NexstarCommand.GET_TRACKING_MODE
-        self._write(request)
+        command = NexstarCommand.GET_TRACKING_MODE
+        self._write(command)
 
         response = self._read_binary(expected_response_length = 1 + 1, check_and_remove_trailing_hash = True)
 
@@ -241,9 +241,9 @@ class NexstarHandController:
         if not isinstance(tracking_mode, NexstarTrackingMode):
             raise NexstarUsageError("_read_binary() failed: incorrect value for parameter 'tracking_mode': {}".format(repr(tracking_mode)))
 
-        request = [NexstarCommand.GET_TRACKING_MODE, tracking_mode]
+        command = NexstarCommand.GET_TRACKING_MODE
 
-        self._write(request)
+        self._write(command, tracking_mode)
 
         # Response is a single hash ('#') character. Drop it.
         response = self._read_binary(expected_response_length = 0 + 1, check_and_remove_trailing_hash = True)
@@ -252,8 +252,9 @@ class NexstarHandController:
 
     def getLocation(self):
 
-        request = NexstarCommand.GET_LOCATION
-        self._write(request)
+        command = NexstarCommand.GET_LOCATION
+        self._write(command)
+
         response = self._read_binary(expected_response_length = 8 + 1, check_and_remove_trailing_hash = True)
 
         latitude_degrees = response[0]
@@ -310,7 +311,7 @@ class NexstarHandController:
         # Synthesize "W" request
 
         request = [
-                Nexstar.GET_LOCATION,
+                NexstarCommand.SET_LOCATION,
                 latitude_degrees, latitude_minutes, latitude_seconds, latitude_sign,
                 longitude_degrees, longitude_minutes, longitude_seconds, longitude_sign
             ]
@@ -347,14 +348,14 @@ class NexstarHandController:
 
         dst = (dst != 0)
 
+        print(year, month, day, hour, minute, second)
+
         tzinfo = datetime.timezone(zone) # simple timezone with offset relative to UTC
         timestamp = datetime.datetime(year, month, day, hour, minute, second, 0, tzinfo)
 
         return (timestamp, dst)
 
     def setTime(self, timestamp, dst):
-
-        # Synthesize "H" request.
 
         hour   = timestamp.hour
         minute = timestamp.minute
@@ -367,7 +368,7 @@ class NexstarHandController:
         if zone < 0:
             zone += 256
 
-        request = [NexStar.SET_TIME, hour, minute, second, month, day, year, zone, dst]
+        request = [NexStarCommand.SET_TIME, hour, minute, second, month, day, year, zone, dst]
         self._write(request)
 
         # Response is a single hash ('#') character. Drop it.
@@ -407,7 +408,7 @@ class NexstarHandController:
     #    print("==>", request, response)
 
     def getAlignmentComplete(self):
-        request = NexstarCommand.GET_ALIGNMENT_COMPLETE
+        request = [NexstarCommand.GET_ALIGNMENT_COMPLETE]
         self._write(request)
         response = self._read_binary(expected_response_length = 1 + 1, check_and_remove_trailing_hash = True)
         response = response[0]
@@ -417,7 +418,7 @@ class NexstarHandController:
         return response
 
     def getGotoInProgress(self):
-        request = NexstarCommand.GET_GOTO_IN_PROGRESS
+        request = [NexstarCommand.GET_GOTO_IN_PROGRESS]
         self._write(request)
         response = self._read_ascii(expected_response_length = 1 + 1, check_and_remove_trailing_hash = True)
         response = response[0]
@@ -428,7 +429,7 @@ class NexstarHandController:
         return response
 
     def cancelGoto(self):
-        request = NexstarCommand.CANCEL_GOTO
+        request = [NexstarCommand.CANCEL_GOTO]
         self._write(request)
         response = self._read_binary(expected_response_length = 0 + 1, check_and_remove_trailing_hash = True)
         return None
@@ -492,7 +493,7 @@ class NexstarHandController:
         if rate >= 0:
             command = NexstarPassthroughCommand.MOTOR_SLEW_POSITIVE_VARIABLE_RATE
         else:
-            command = NexstarPassthroughCommand.MOTOR_SLEWNEGATIVE_VARIABLE_RATE
+            command = NexstarPassthroughCommand.MOTOR_SLEW_NEGATIVE_VARIABLE_RATE
             rate = -rate
 
         if not (0 <= rate <= 65535):
@@ -504,36 +505,6 @@ class NexstarHandController:
 
         (versionMajor, versionMinor) = self.passthrough(deviceId, command = NexstarPassthroughCommand.GET_DEVICE_VERSION, expected_response_bytes = 2)
 
-        return (versionMajor, versionMinor)
-
-    def getDeviceIntVersion(self, deviceId):
-
-        if not isinstance(deviceId, int):
-            raise NexstarUsageError("getDeviceIntVersion() failed: incorrect value for parameter 'deviceId': {}".format(repr(deviceId)))
-
-        request = [ord("P"), 1, deviceId, 254, 0, 0, 0, 2]
-        request = bytes(request)
-        self._write_binary(request)
-
-        response = self._device.read(2 + 1)
-
-        if (response[-1] != ord('#')):
-
-            # We got a response that didn't end with a hash character.
-            # This happens if the requested device does not exist.
-            # In that case, an extra # is output by the hand controller.
-            # We read and swallow it here.
-
-            extra_hash = self._device.read(1)
-            if extra_hash != b"#":
-                raise NexstarProtocolError("extra hash not found")
-
-            raise NexstarNoSuchDeviceError("device {} not found".format(deviceId))
-
-        # We have a response that ends with a hash. Assume it is valid.
-        response = response[:-1] # drop hash
-
-        (versionMajor, versionMinor) = response
         return (versionMajor, versionMinor)
 
 def status_report(controller):
@@ -643,10 +614,8 @@ def main():
                 time.sleep(1)
     if False:
 
-        controller.setLocation(52.5, 4.5)
-
+        controller.setLocation(52.01, 4.355)
         loc = controller.getLocation()
-        print(loc)
 
     if False:
 
