@@ -1,12 +1,24 @@
-nexstar
-=======
+# Nexstar Python API
 
-Python scripts for controlling a Nexstar-based telescope.
+This code follows the NexStar Communication Protocol as described in NexStarCommunicationProtocolV1.2.pdf
 
-The current code works for the RS-232 port that connects to the bottom of the hand controller.
+This code is forked from https://github.com/sidneycadot/nexstar
 
-It has been tested with my CelestronLCM60 telescope.
+The main class is NexstarHandController and supports the following methods:
 
-See the following file for a protocol description:
-
-http://www.celestron.com/c3/images/files/downloads/1154108406_nexstarcommprot.pdf
+* getAlignmentComplete
+* getDeviceVersion
+* getGotoInProgress
+* getLocation
+* getModel
+* getPosition
+* getTime
+* getTrackingMode
+* getVersion
+* gotoPosition
+* passthrough
+* setLocation
+* setTime
+* setTrackingMode
+* slew_fixed
+* slew_variable

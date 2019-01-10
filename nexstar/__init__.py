@@ -1,9 +1,9 @@
 #! /usr/bin/env python3
 
-# This code follows the NexStar Communication Protocol as described in
-# http://www.celestron.com/c3/images/files/downloads/1154108406_nexstarcommprot.pdf
+# This code follows the NexStar Communication Protocol as described in NexStarCommunicationProtocolV1.2.pdf
+# This code is forked from https://github.com/sidneycadot/nexstar
 
-import sys, serial, warnings, datetime, pytz, time
+import sys, serial, datetime, pytz, time
 from enum import Enum
 
 class NexstarUsageError(Exception):
@@ -187,13 +187,13 @@ class NexstarHandController:
 
         if highPrecisionFlag:
             command = NexstarCommand.GOTO_POSITION_AZM_ALT_PRECISE if (coordinateMode == NexstarCoordinateMode.AZM_ALT) else NexstarCommand.GOTO_POSITION_RA_DEC_PRECISE
-            firstCoordinate  = round(firstCoordinate  / 360.0 * 0x100000000)
-            secondCoordinate = round(secondCoordinate / 360.0 * 0x100000000)
+            firstCoordinate  = round(float(firstCoordinate)  / 360.0 * 0x100000000)
+            secondCoordinate = round(float(secondCoordinate) / 360.0 * 0x100000000)
             coordinates = "{:08x},{:08x}".format(firstCoordinate, secondCoordinate)
         else:
             command = NexstarCommand.GOTO_POSITION_AZM_ALT if (coordinateMode == NexstarCoordinateMode.AZM_ALT) else NexstarCommand.GOTO_POSITION_RA_DEC
-            firstCoordinate  = round(firstCoordinate  / 360.0 * 0x10000)
-            secondCoordinate = round(secondCoordinate / 360.0 * 0x10000)
+            firstCoordinate  = round(float(firstCoordinate)  / 360.0 * 0x10000)
+            secondCoordinate = round(float(secondCoordinate) / 360.0 * 0x10000)
             coordinates = "{:04x},{:04x}".format(firstCoordinate, secondCoordinate)
 
         self._write(command, coordinates)
@@ -209,13 +209,13 @@ class NexstarHandController:
 
         if highPrecisionFlag:
             command = NexstarCommand.SYNC_PRECISE
-            firstCoordinate  = round(firstCoordinate  / 360.0 * 0x100000000)
-            secondCoordinate = round(secondCoordinate / 360.0 * 0x100000000)
+            firstCoordinate  = round(float(firstCoordinate)  / 360.0 * 0x100000000)
+            secondCoordinate = round(float(secondCoordinate) / 360.0 * 0x100000000)
             coordinates = "{}{:08x},{:08x}".format(firstCoordinate, secondCoordinate)
         else:
             command = NexstarCommand.SYNC
-            firstCoordinate  = round(firstCoordinate  / 360.0 * 0x10000)
-            secondCoordinate = round(secondCoordinate / 360.0 * 0x10000)
+            firstCoordinate  = round(float(firstCoordinate)  / 360.0 * 0x10000)
+            secondCoordinate = round(float(secondCoordinate) / 360.0 * 0x10000)
             coordinates = "{}{:04x},{:04x}".format(firstCoordinate, secondCoordinate)
 
         self._write(command, coordinates)
