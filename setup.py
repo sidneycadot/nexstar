@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="nexstar",
-    version="0.0.1",
+    version="0.0.3",
     author="David Schuster",
     author_email="David.Schuster@gmail.com",
     description="Python interface for Celestron Nexstar telescopes",
@@ -13,7 +13,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/circuitqed/nexstar",
     packages=setuptools.find_packages(),
-    install_requires=['serial','pytz'],
+    install_requires=['pyserial','pytz'],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
