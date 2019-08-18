@@ -241,7 +241,7 @@ class NexstarHandController:
         if not isinstance(tracking_mode, NexstarTrackingMode):
             raise NexstarUsageError("_read_binary() failed: incorrect value for parameter 'tracking_mode': {}".format(repr(tracking_mode)))
 
-        command = NexstarCommand.GET_TRACKING_MODE
+        command = NexstarCommand.SET_TRACKING_MODE
 
         self._write(command, tracking_mode)
 
