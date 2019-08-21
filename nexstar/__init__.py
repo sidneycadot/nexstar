@@ -91,7 +91,7 @@ class NexstarHandController:
                     parity           = serial.PARITY_NONE,
                     stopbits         = serial.STOPBITS_ONE,
                     timeout          = 3.500,
-                    xonxoff          = None,
+                    #xonxoff          = None,
                     rtscts           = False,
                     writeTimeout     = None,
                     dsrdtr           = False,

@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="nexstar",
-    version="0.0.3",
+    version="0.0.4",
     author="David Schuster",
     author_email="David.Schuster@gmail.com",
     description="Python interface for Celestron Nexstar telescopes",
