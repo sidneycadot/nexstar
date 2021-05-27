@@ -368,7 +368,7 @@ class NexstarHandController:
         if zone < 0:
             zone += 256
 
-        request = [NexStarCommand.SET_TIME, hour, minute, second, month, day, year, zone, dst]
+        request = [NexstarCommand.SET_TIME, hour, minute, second, month, day, year, zone, dst]
         self._write(request)
 
         # Response is a single hash ('#') character. Drop it.
