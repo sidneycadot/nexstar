@@ -74,6 +74,7 @@ class NexstarTrackingMode(Enum):
 class NexstarDeviceId(Enum):
     AZM_RA_MOTOR  = 16
     ALT_DEC_MOTOR = 17
+    FOCUS_MOTOR   = 18
     GPS_DEVICE    = 176
     RTC_DEVICE    = 178 # real-time clock on the CGE mount
 
