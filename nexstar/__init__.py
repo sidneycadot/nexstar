@@ -55,8 +55,11 @@ class NexstarCommand(Enum):
     PASSTHROUGH                   = 'P' # 1.6+ this includes slewing commands, 'get device version' commands, GPS commands, and RTC commands
 
 class NexstarPassthroughCommand(Enum):
+    FOCUSER_GET_POSITION              =   1  # Focuser passthrough commands are nexstar auxbus commands
+    FOCUSER_GOTO_POSITION             =   2
     MOTOR_SLEW_POSITIVE_VARIABLE_RATE =   6
     MOTOR_SLEW_NEGATIVE_VARIABLE_RATE =   7
+    FOCUSER_MOVE_DONE                 =  19
     MOTOR_SLEW_POSITIVE_FIXED_RATE    =  36
     MOTOR_SLEW_NEGATIVE_FIXED_RATE    =  37
     GET_DEVICE_VERSION                = 254
@@ -74,6 +77,7 @@ class NexstarTrackingMode(Enum):
 class NexstarDeviceId(Enum):
     AZM_RA_MOTOR  = 16
     ALT_DEC_MOTOR = 17
+    FOCUS_MOTOR   = 18
     GPS_DEVICE    = 176
     RTC_DEVICE    = 178 # real-time clock on the CGE mount
 
@@ -506,6 +510,20 @@ class NexstarHandController:
         (versionMajor, versionMinor) = self.passthrough(deviceId, command = NexstarPassthroughCommand.GET_DEVICE_VERSION, expected_response_bytes = 2)
 
         return (versionMajor, versionMinor)
+
+    # Celestron focuser positions are in steps.
+    # The values returned here will match the values shown on the hand controller under the focuser menu.
+    def focuserGetPosition(self):
+        position = self.passthrough(NexstarDeviceId.FOCUS_MOTOR, command = NexstarPassthroughCommand.FOCUSER_GET_POSITION, expected_response_bytes = 3)
+        return int.from_bytes(position, "big", signed=False)
+
+    def focuserGotoPosition(self, position):
+        cmd = [NexstarPassthroughCommand.FOCUSER_GOTO_POSITION] + list(int.to_bytes(position, 3, "big", signed=False))
+        self.passthrough(NexstarDeviceId.FOCUS_MOTOR, cmd, 4)
+
+    def focuserGotoInProgress(self):
+        return not self.passthrough(NexstarDeviceId.FOCUS_MOTOR, [NexstarPassthroughCommand.FOCUSER_MOVE_DONE], 1) == b'\xff'
+
 
 def status_report(controller):
 
